@@ -7,6 +7,7 @@ Todo:
 
 
 #include <cmath>
+#include <map>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -30,6 +31,7 @@ CollisionChecker::CollisionChecker(string file1, string file2)
     inside = parseCSV(file1);
     outside = parseCSV(file2);
     searchIdx = 0;
+    lineSize = inside.size();
 }
 
 vector<vector<double>> CollisionChecker::get_coordinates(double x, double y, double l, double w, double theta)
@@ -102,17 +104,20 @@ size_t CollisionChecker::find_nearest(vector<double> ego, vector<vector<double> 
             index = i;
         }
         if (d > lastDist) {
-            searchIdx = index;
+            this->searchIdx = index;
             break;
         }
         lastDist = d;
-        i = (i + 1) % lines.size();
+        i = (i + 1) % lineSize;
 
     }
     return index;
 }
 
 bool CollisionChecker::check_boundary_collision(vector<double> egoVeh){
+    /*
+    egoVeh: (i.e., x: x coordinate, y: y coordinate, l: length, w: width, theta: heading)
+    */
     vector<double> ego = {egoVeh[0], egoVeh[1]};
     size_t insideIdx = find_nearest(ego, inside);
     size_t outsideIdx = find_nearest(ego, outside);
@@ -159,5 +164,77 @@ bool CollisionChecker::check_segments(vector<double> egoVeh, vector<vector<doubl
         if (new_sign!=sign) return false;
     }
 
+    return true;
+}
+
+map<char, double> CollisionChecker::get_normal(vector<double> p1, vector<double> p2){
+    /*
+    this function obtains directional vector between two points
+
+    @param p1: the first point
+    @param p2: the second point
+
+    @return: A map representing the normal vector
+    */
+    
+    map<char, double> normal;
+    double norm = sqrt(pow(p2[0] - p1[0], 2) + pow(p2[1] - p1[1], 2));
+    normal['x'] = (p2[0] - p1[0]) / norm;
+    normal['y'] = (p2[1] - p1[1]) / norm;
+    return normal;
+}
+
+
+bool CollisionChecker::check_vehicle_collision(vector<double> rec1, vector<double> rec2){
+    /*
+    this function check if two vehicles collide given their states
+
+    @param rec1: state of the ego vehicle 
+    (i.e., x: x coordinate, y: y coordinate, l: length, w: width, theta: heading)
+    @param rec2: state of the opponent vehicle
+
+    @return: A boolean indicating if a collision happens
+    */
+
+    vector<vector<double>> pts1 = get_coordinates(rec1[0], rec1[1], rec1[2], rec1[3], rec1[4]);
+    vector<vector<double>> pts2 = get_coordinates(rec2[0], rec2[1], rec2[2], rec2[3], rec2[4]);
+    map<char, double> normals[4];
+    normals[0] = get_normal(pts1[0], pts1[1]);
+    normals[1] = get_normal(pts1[1], pts1[2]);
+    normals[2] = get_normal(pts2[0], pts2[1]);
+    normals[3] = get_normal(pts2[1], pts2[2]);
+    
+    // check if there is overlap between projections on the normal vector
+    for (size_t i=0; i<4; ++i){
+        map<char, double> tmp = normals[i];
+        double min1 = INFINITY;
+        double max1 = -INFINITY;
+        double min2 = INFINITY;
+        double max2 = -INFINITY;
+
+        // get all projections for corners of rec1
+        for (size_t j=0; j<4; ++j){
+            double projected = tmp['x'] * pts1[j][0] + tmp['y'] * pts1[j][1];
+            if ((!min1) || (projected < min1)){
+                min1 = projected;
+            }
+            if ((!max1) || (projected > max1)){
+                max1 = projected;
+            }
+        }
+
+        // get all projections for corners of rec2
+        for (size_t j=0; j<4; ++j){
+            double projected = tmp['x'] * pts2[j][0] + tmp['y'] * pts2[j][1];
+            if ((!min2) || (projected < min2)){
+                min2 = projected;
+            }
+            if ((!max2) || (projected > max2)){
+                max2 = projected;
+            }
+        }
+
+        if (max1 < min2 || max2 < min1) return false;
+    }
     return true;
 }
